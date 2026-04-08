@@ -12,6 +12,18 @@ import websockets.sync.client
 from . import msgpack_numpy
 
 
+def _parse_keepalive_env(name: str, default: Optional[float]) -> Optional[float]:
+    raw_value = os.getenv(name)
+    if raw_value is None or raw_value == "":
+        return default
+
+    lowered = raw_value.strip().lower()
+    if lowered in {"0", "none", "off", "disable", "disabled"}:
+        return None
+
+    return float(raw_value)
+
+
 class WebsocketClientPolicy:
     """Implements the Policy interface by communicating with a server over websocket.
 
@@ -49,8 +61,8 @@ class WebsocketClientPolicy:
                     max_size=None,
                     additional_headers=headers,
                     open_timeout=150,
-                    ping_interval=20,
-                    ping_timeout=20,
+                    ping_interval=_parse_keepalive_env("WS_POLICY_PING_INTERVAL", 20),
+                    ping_timeout=_parse_keepalive_env("WS_POLICY_PING_TIMEOUT", 20),
                 )
                 metadata = msgpack_numpy.unpackb(conn.recv())
                 return conn, metadata

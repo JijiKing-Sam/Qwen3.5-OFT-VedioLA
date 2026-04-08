@@ -1,0 +1,24 @@
+accelerate==1.5.2
+albumentations==1.4.18
+av==12.3.0
+decord==0.6.0
+einops
+eva-decord==0.6.1
+fastparquet==2024.11.0
+matplotlib
+msgpack
+numpy==1.26.4
+numpydantic==1.6.9
+omegaconf
+pillow
+pyarrow==14.0.1
+qwen-vl-utils
+rich
+scipy
+tensorboard
+timm
+transformers @ git+https://github.com/huggingface/transformers.git@main
+tyro
+websocket
+websocket-client==1.8.0
+websockets

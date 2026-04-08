@@ -23,6 +23,7 @@ import transformers
 from omegaconf import OmegaConf
 from starVLA.dataloader.qwenvl_llavajson.qwen_data_config import data_list
 from starVLA.dataloader.qwenvl_llavajson.rope2d import get_rope_index_25, get_rope_index_2
+from starVLA.model.modules.vlm.config_utils import get_active_vlm_model_id
 
 IGNORE_INDEX = -100
 IMAGE_TOKEN_INDEX = 151655
@@ -560,12 +561,13 @@ def make_supervised_data_module(tokenizer: transformers.PreTrainedTokenizer, dat
 
 def make_vlm_dataloader(cfg):
     data_args = cfg.datasets.vlm_data
+    base_vlm = get_active_vlm_model_id(cfg)
     image_processor = AutoProcessor.from_pretrained(
-        cfg.framework.qwenvl.base_vlm,
+        base_vlm,
     ).image_processor
 
     tokenizer = transformers.AutoTokenizer.from_pretrained(
-        cfg.framework.qwenvl.base_vlm,
+        base_vlm,
         model_max_length=data_args.model_max_length,
         padding_side="left",  # flash Attention version of Qwen2.5_VL. Make sure to  call `tokenizer.padding_side  = 'left'` before tokenizing the input.
         use_fast=False,
@@ -613,12 +615,13 @@ if __name__ == "__main__":
     cfg = OmegaConf.load(args.config_yaml)
     
     data_args = cfg.datasets.vlm_data
+    base_vlm = get_active_vlm_model_id(cfg)
     image_processor = AutoProcessor.from_pretrained(
-        cfg.framework.qwenvl.base_vlm,
+        base_vlm,
     ).image_processor
 
     tokenizer = transformers.AutoTokenizer.from_pretrained(
-        cfg.framework.qwenvl.base_vlm,
+        base_vlm,
         model_max_length=data_args.model_max_length,
         padding_side="left",
         use_fast=False,

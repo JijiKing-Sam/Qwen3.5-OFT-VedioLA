@@ -12,9 +12,7 @@ from typing import Dict
 import numpy as np
 from pathlib import Path
 from PIL import Image
-
-from starVLA.model.tools import read_mode_config
-
+import json
 
 class ModelClient:
     def __init__(
@@ -29,6 +27,8 @@ class ModelClient:
         use_ddim: bool = True,
         num_ddim_steps: int = 10,
         adaptive_ensemble_alpha = 0.1,
+        action_stats_path: Optional[str] = None,
+        action_chunk_size: Optional[int] = None,
         host="0.0.0.0",
         port=10095,
     ) -> None:
@@ -59,8 +59,16 @@ class ModelClient:
             self.action_ensembler = None
         self.num_image_history = 0
 
-        self.action_norm_stats = self.get_action_stats(self.unnorm_key, policy_ckpt_path=policy_ckpt_path)
-        self.action_chunk_size = self.get_action_chunk_size(policy_ckpt_path=policy_ckpt_path)
+        self.action_norm_stats = self.get_action_stats(
+            self.unnorm_key,
+            policy_ckpt_path=policy_ckpt_path,
+            action_stats_path=action_stats_path,
+        )
+        self.action_chunk_size = (
+            action_chunk_size
+            if action_chunk_size is not None
+            else self.get_action_chunk_size(policy_ckpt_path=policy_ckpt_path)
+        )
         
 
     def _add_image_to_history(self, image: np.ndarray) -> None:
@@ -147,19 +155,25 @@ class ModelClient:
         return actions
 
     @staticmethod
-    def get_action_stats(unnorm_key: str, policy_ckpt_path) -> dict:
+    def get_action_stats(unnorm_key: str, policy_ckpt_path=None, action_stats_path: Optional[str] = None) -> dict:
         """
         Duplicate stats accessor (retained for backward compatibility).
         """
-        policy_ckpt_path = Path(policy_ckpt_path)
-        model_config, norm_stats = read_mode_config(policy_ckpt_path)  # read config and norm_stats
+        if action_stats_path is not None:
+            with open(action_stats_path, "r", encoding="utf-8") as f:
+                norm_stats = json.load(f)
+        else:
+            policy_ckpt_path = Path(policy_ckpt_path)
+            _, norm_stats = _read_mode_config(policy_ckpt_path)  # read config and norm_stats
 
         unnorm_key = ModelClient._check_unnorm_key(norm_stats, unnorm_key)
         return norm_stats[unnorm_key]["action"]
 
     @staticmethod
     def get_action_chunk_size(policy_ckpt_path):
-        model_config, _ = read_mode_config(policy_ckpt_path)  # read config and norm_stats
+        if policy_ckpt_path is None:
+            raise ValueError("policy_ckpt_path is required when action_chunk_size is not provided")
+        model_config, _ = _read_mode_config(policy_ckpt_path)  # read config and norm_stats
         # import ipdb; ipdb.set_trace()
         return model_config['framework']['action_model']['future_action_window_size'] + 1
 
@@ -219,3 +233,9 @@ class ModelClient:
             f"please choose from: {norm_stats.keys()}"
         )
         return unnorm_key
+
+
+def _read_mode_config(policy_ckpt_path):
+    from starVLA.model.tools import read_mode_config
+
+    return read_mode_config(policy_ckpt_path)

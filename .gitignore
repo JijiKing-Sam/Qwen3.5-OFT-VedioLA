@@ -108,6 +108,9 @@ celerybeat.pid
 # Environments
 .env
 .venv
+.venv-smoke/
+.venv-libero/
+.libero-config/
 env/
 venv/
 ENV/

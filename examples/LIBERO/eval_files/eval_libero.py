@@ -33,11 +33,15 @@ class Args:
     host: str = "127.0.0.1"
     port: int = 10093
     resize_size = [224,224]
+    unnorm_key: str | None = None
+    action_stats_path: str = ""
+    action_chunk_size: int = 0
 
     #################################################################################################################
     # LIBERO environment-specific parameters
     #################################################################################################################
     task_suite_name: str = "libero_goal"  # Task suite. Options: libero_spatial, libero_object, libero_goal, libero_10, libero_90
+    max_tasks: int = 0  # 0 means evaluate the full suite
     num_steps_wait: int = 10  # Number of steps to wait for objects to stabilize i n sim
     num_trials_per_task: int = 50  # Number of rollouts per task
 
@@ -66,6 +70,8 @@ def eval_libero(args: Args) -> None:
     task_suite = benchmark_dict[args.task_suite_name]()
     num_tasks_in_suite = task_suite.n_tasks
     logging.info(f"Task suite: {args.task_suite_name}")
+    num_tasks_to_run = num_tasks_in_suite if args.max_tasks <= 0 else min(args.max_tasks, num_tasks_in_suite)
+    logging.info(f"Running {num_tasks_to_run}/{num_tasks_in_suite} tasks")
 
     # args.video_out_path = f"{date_base}+{args.job_name}"
     
@@ -86,6 +92,9 @@ def eval_libero(args: Args) -> None:
 
     client_model = ModelClient(
         policy_ckpt_path=args.pretrained_path, # to get unnormalization stats
+        unnorm_key=args.unnorm_key,
+        action_stats_path=args.action_stats_path or None,
+        action_chunk_size=args.action_chunk_size or None,
         host=args.host,
         port=args.port,
         image_size=args.resize_size,
@@ -94,7 +103,7 @@ def eval_libero(args: Args) -> None:
 
     # Start evaluation
     total_episodes, total_successes = 0, 0
-    for task_id in tqdm.tqdm(range(num_tasks_in_suite)):
+    for task_id in tqdm.tqdm(range(num_tasks_to_run)):
         # Get task
         task = task_suite.get_task(task_id)
 

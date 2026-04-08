@@ -28,9 +28,12 @@ except NameError:
 if pkg_path is not None:
     try:
         for _, module_name, _ in pkgutil.iter_modules(pkg_path):
-            importlib.import_module(f"{__name__}.{module_name}")
+            try:
+                importlib.import_module(f"{__name__}.{module_name}")
+            except Exception as submodule_error:
+                logger.warning(f"Skipping framework submodule `{module_name}` during auto-import: {submodule_error}")
     except Exception as e:
-        logger.log(f"Warning: Failed to auto-import framework submodules: {e}")
+        logger.warning(f"Failed to auto-import framework submodules: {e}")
         
 def build_framework(cfg):
     """

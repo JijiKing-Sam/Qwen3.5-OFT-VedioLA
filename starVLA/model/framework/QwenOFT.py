@@ -126,6 +126,7 @@ class Qwenvl_OFT(baseframework):
         with torch.autocast("cuda", dtype=torch.bfloat16):
             qwenvl_outputs = self.qwen_vl_interface(
                 **qwen_inputs,
+                use_cache=False,
                 output_attentions=False,
                 output_hidden_states=True,
                 return_dict=True,
@@ -188,6 +189,7 @@ class Qwenvl_OFT(baseframework):
         with torch.autocast("cuda", dtype=torch.bfloat16):
             qwenvl_outputs = self.qwen_vl_interface(
                 **qwen_inputs,
+                use_cache=False,
                 output_attentions=False,
                 output_hidden_states=True,
                 return_dict=True,

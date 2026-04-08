@@ -8,14 +8,11 @@ from transforms3d.euler import euler2axangle
 from typing import Dict
 import numpy as np
 from pathlib import Path
+import json
 
 
 from deployment.model_server.tools.websocket_policy_client import WebsocketClientPolicy
 from examples.SimplerEnv.eval_files.adaptive_ensemble import AdaptiveEnsembler
-from starVLA.model.tools import read_mode_config
-
-
-
 class ModelClient:
     def __init__(
         self,
@@ -31,6 +28,7 @@ class ModelClient:
         num_ddim_steps: int = 10,
         action_ensemble = True,
         adaptive_ensemble_alpha = 0.1,
+        action_stats_path: Optional[str] = None,
         host="0.0.0.0",
         port=10093,
     ) -> None:
@@ -88,7 +86,11 @@ class ModelClient:
             self.action_ensembler = None
         self.num_image_history = 0
 
-        self.action_norm_stats = self.get_action_stats(self.unnorm_key, policy_ckpt_path=policy_ckpt_path)
+        self.action_norm_stats = self.get_action_stats(
+            self.unnorm_key,
+            policy_ckpt_path=policy_ckpt_path,
+            action_stats_path=action_stats_path,
+        )
         
 
     def _add_image_to_history(self, image: np.ndarray) -> None:
@@ -229,12 +231,17 @@ class ModelClient:
         return actions
 
     @staticmethod
-    def get_action_stats(unnorm_key: str, policy_ckpt_path) -> dict:
+    def get_action_stats(unnorm_key: str, policy_ckpt_path=None, action_stats_path: Optional[str] = None) -> dict:
         """
         Duplicate stats accessor (retained for backward compatibility).
         """
+        if action_stats_path is not None:
+            with open(action_stats_path, "r", encoding="utf-8") as f:
+                norm_stats = json.load(f)
+            return norm_stats[unnorm_key]["action"]
+
         policy_ckpt_path = Path(policy_ckpt_path)
-        model_config, norm_stats = read_mode_config(policy_ckpt_path)  # read config and norm_stats
+        model_config, norm_stats = _read_mode_config(policy_ckpt_path)  # read config and norm_stats
 
         # unnorm_key = baseframework._check_unnorm_key(norm_stats, unnorm_key) # 其实也是很环境 specific 的
         return norm_stats[unnorm_key]["action"]
@@ -276,3 +283,9 @@ class ModelClient:
         axs["image"].set_xlabel("Time in one episode (subsampled)")
         plt.legend()
         plt.savefig(save_path)
+
+
+def _read_mode_config(policy_ckpt_path):
+    from starVLA.model.tools import read_mode_config
+
+    return read_mode_config(policy_ckpt_path)
