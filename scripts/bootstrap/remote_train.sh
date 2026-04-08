@@ -9,6 +9,7 @@ ENV_NAME="${ENV_NAME:-videola-qwen35-train}"
 PYTHON_VERSION="${PYTHON_VERSION:-3.10}"
 TORCH_INDEX_URL="${TORCH_INDEX_URL:-https://download.pytorch.org/whl/cu128}"
 INSTALL_FLASH_ATTN="${INSTALL_FLASH_ATTN:-1}"
+INSTALL_LIBERO_EVAL="${INSTALL_LIBERO_EVAL:-1}"
 
 if [[ -z "${CONDA_EXE}" ]]; then
   echo "conda not found; set CONDA_EXE=/path/to/conda"
@@ -26,6 +27,10 @@ conda activate "${ENV_NAME}"
 python -m pip install --upgrade pip setuptools wheel
 python -m pip install --upgrade torch torchvision torchaudio --index-url "${TORCH_INDEX_URL}"
 python -m pip install -r requirements/train.txt
+
+if [[ "${INSTALL_LIBERO_EVAL}" == "1" ]]; then
+  python -m pip install -r requirements/libero_eval.txt
+fi
 
 if [[ "${INSTALL_FLASH_ATTN}" == "1" ]]; then
   python -m pip install flash-attn --no-build-isolation
