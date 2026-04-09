@@ -15,9 +15,10 @@ REQUIRE_CUDA="${REQUIRE_CUDA:-1}"
 MIN_GPUS="${MIN_GPUS:-1}"
 MIN_VRAM_GB="${MIN_VRAM_GB:-20}"
 CHECK_WANDB="${CHECK_WANDB:-0}"
+CONDA_EXE="${CONDA_EXE:-$(command -v conda || true)}"
 
-if command -v conda >/dev/null 2>&1; then
-  eval "$(conda shell.bash hook)"
+if [[ -n "${CONDA_EXE}" ]]; then
+  eval "$("${CONDA_EXE}" shell.bash hook)"
   if conda env list | awk '{print $1}' | grep -qx "${ENV_NAME}"; then
     conda activate "${ENV_NAME}"
   fi
@@ -25,8 +26,16 @@ fi
 
 echo "== Repo =="
 echo "repo_root=${REPO_ROOT}"
-echo "git_branch=$(git rev-parse --abbrev-ref HEAD)"
-echo "git_commit=$(git rev-parse HEAD)"
+if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  echo "git_branch=$(git rev-parse --abbrev-ref HEAD)"
+  echo "git_commit=$(git rev-parse HEAD)"
+elif [[ -f "${REPO_ROOT}/.codex-import-commit" ]]; then
+  echo "git_branch=<snapshot>"
+  echo "git_commit=$(cat "${REPO_ROOT}/.codex-import-commit")"
+else
+  echo "git_branch=<unavailable>"
+  echo "git_commit=<unavailable>"
+fi
 echo
 
 echo "== System =="

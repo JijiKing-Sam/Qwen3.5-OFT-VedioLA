@@ -37,6 +37,10 @@ except (ImportError, RuntimeError):
     TORCHCODEC_AVAILABLE = False
 
 
+def _has_torchvision_video_reader() -> bool:
+    return hasattr(torchvision, "io") and hasattr(torchvision.io, "VideoReader")
+
+
 def get_frames_by_indices(
     video_path: str,
     indices: list[int] | np.ndarray,
@@ -239,6 +243,13 @@ def get_frames_by_timestamps(
                 container = None
     
     elif video_backend == "torchvision_av":
+        if not _has_torchvision_video_reader():
+            return get_frames_by_timestamps(
+                video_path,
+                timestamps,
+                video_backend="pyav",
+                video_backend_kwargs=video_backend_kwargs,
+            )
         torchvision.set_video_backend("pyav")
         loaded_frames = []
         loaded_ts = []
@@ -330,6 +341,13 @@ def get_all_frames(
             frames.append(frame)
         frames = np.array(frames)
     elif video_backend == "torchvision_av":
+        if not _has_torchvision_video_reader():
+            return get_all_frames(
+                video_path,
+                video_backend="pyav",
+                video_backend_kwargs=video_backend_kwargs,
+                resize_size=resize_size,
+            )
         # set backend and reader
         torchvision.set_video_backend("pyav")
         reader = torchvision.io.VideoReader(video_path, "video")

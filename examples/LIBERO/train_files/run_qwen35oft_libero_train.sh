@@ -10,6 +10,8 @@ export WANDB_MODE="${WANDB_MODE:-offline}"
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")"/../../.. && pwd)"
 cd "${REPO_ROOT}"
 
+CONDA_EXE="${CONDA_EXE:-$(command -v conda || true)}"
+ENV_NAME="${ENV_NAME:-videola-qwen35-train}"
 FRAMEWORK_NAME="${FRAMEWORK_NAME:-Qwen35OFT}"
 BASE_VLM="${BASE_VLM:-Qwen/Qwen3.5-4B}"
 ATTN_IMPLEMENTATION="${ATTN_IMPLEMENTATION:-sdpa}"
@@ -31,6 +33,13 @@ PRETRAINED_CHECKPOINT="${PRETRAINED_CHECKPOINT:-}"
 IS_RESUME="${IS_RESUME:-false}"
 RUN_PREFLIGHT="${RUN_PREFLIGHT:-0}"
 
+if [[ -n "${CONDA_EXE}" ]]; then
+  eval "$("${CONDA_EXE}" shell.bash hook)"
+  if conda env list | awk '{print $1}' | grep -qx "${ENV_NAME}"; then
+    conda activate "${ENV_NAME}"
+  fi
+fi
+
 if [[ -z "${NUM_PROCESSES:-}" ]]; then
   if command -v nvidia-smi >/dev/null 2>&1; then
     NUM_PROCESSES="$(nvidia-smi -L 2>/dev/null | wc -l | tr -d ' ')"
@@ -48,6 +57,17 @@ mkdir -p "${OUTPUT_DIR}"
 cp "$0" "${OUTPUT_DIR}/"
 cp "${CONFIG_YAML}" "${OUTPUT_DIR}/$(basename "${CONFIG_YAML}")"
 
+if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  GIT_BRANCH="$(git rev-parse --abbrev-ref HEAD)"
+  GIT_COMMIT="$(git rev-parse HEAD)"
+elif [[ -f "${REPO_ROOT}/.codex-import-commit" ]]; then
+  GIT_BRANCH="<snapshot>"
+  GIT_COMMIT="$(cat "${REPO_ROOT}/.codex-import-commit")"
+else
+  GIT_BRANCH="<unavailable>"
+  GIT_COMMIT="<unavailable>"
+fi
+
 if [[ "${RUN_PREFLIGHT}" == "1" ]]; then
   REQUIRE_CUDA=1 \
   LIBERO_DATA_ROOT="${LIBERO_DATA_ROOT}" \
@@ -62,8 +82,8 @@ fi
   echo "started_at=$(date -Iseconds)"
   echo "hostname=$(hostname)"
   echo "repo_root=${REPO_ROOT}"
-  echo "git_branch=$(git rev-parse --abbrev-ref HEAD)"
-  echo "git_commit=$(git rev-parse HEAD)"
+  echo "git_branch=${GIT_BRANCH}"
+  echo "git_commit=${GIT_COMMIT}"
   echo "framework_name=${FRAMEWORK_NAME}"
   echo "base_vlm=${BASE_VLM}"
   echo "attn_implementation=${ATTN_IMPLEMENTATION}"

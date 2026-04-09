@@ -19,6 +19,14 @@ bash examples/LIBERO/train_files/run_qwen35oft_libero_train.sh
 bash scripts/experiments/run_qwen35oft_tiny_overfit.sh
 ```
 
+By default this smoke wrapper now uses:
+
+- `--trainer.freeze_modules qwen_vl_interface`
+- `--datasets.vla_data.per_device_batch_size 1`
+- `--is_debug false`
+
+This is the validated single-GPU sanity profile for a `96GB` card.
+
 6. For raw model construction smoke, run:
 
 ```bash

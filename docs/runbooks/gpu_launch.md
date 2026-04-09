@@ -60,8 +60,10 @@ bash scripts/experiments/run_qwen35oft_tiny_overfit.sh
 Interpretation:
 
 - This is a short training smoke, not a formal result.
+- The default smoke profile freezes `qwen_vl_interface`, uses `per_device_batch_size=1`, and disables debug wait.
 - The goal is to confirm loss starts moving, checkpoints save, and the job stays healthy.
 - Outputs go under `results/tiny_overfit/<run_id>/`.
+- This profile was verified on a single `RTX PRO 6000 96GB`; full fine-tuning of all `Qwen35OFT` parameters OOMed on that same card.
 
 ## Step 4: Start The Formal 80K Run
 
