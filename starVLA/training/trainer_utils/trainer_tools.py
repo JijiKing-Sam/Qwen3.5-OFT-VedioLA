@@ -48,6 +48,25 @@ def normalize_dotlist_args(args):
     return normalized
 
 
+def normalize_module_patterns(freeze_modules):
+    """Normalize freeze module specifications into a flat list of dotted module paths."""
+    if freeze_modules is None:
+        return []
+
+    if isinstance(freeze_modules, str):
+        raw_patterns = freeze_modules.split(",")
+    elif hasattr(freeze_modules, "__iter__") and not isinstance(freeze_modules, (bytes, dict)):
+        raw_patterns = []
+        for item in freeze_modules:
+            if item is None:
+                continue
+            raw_patterns.extend(str(item).split(","))
+    else:
+        raw_patterns = str(freeze_modules).split(",")
+
+    return [pattern.strip() for pattern in raw_patterns if str(pattern).strip()]
+
+
 def build_param_lr_groups(model, cfg):
     """
     build multiple param groups based on cfg.trainer.learning_rate.
@@ -64,10 +83,7 @@ def build_param_lr_groups(model, cfg):
     lr_cfg = cfg.trainer.learning_rate
     base_lr = lr_cfg.get("base", 1e-4)  # default base learning rate
 
-    freeze_modules = cfg.trainer.get("freeze_modules", "")
-    if not isinstance(freeze_modules, str):
-        freeze_modules = ""
-    freeze_patterns = [p.strip() for p in freeze_modules.split(",") if p.strip()]
+    freeze_patterns = normalize_module_patterns(cfg.trainer.get("freeze_modules", ""))
 
     used_params = set()
     frozen_params = set()
@@ -92,7 +108,7 @@ def build_param_lr_groups(model, cfg):
             for attr in module_name.split("."):
                 module = getattr(module, attr)
             # filter out frozen parameters
-            params = [p for p in module.parameters() if id(p) not in frozen_params]
+            params = [p for p in module.parameters() if p.requires_grad and id(p) not in frozen_params]
             if params:  # only add param group if there are trainable parameters
                 param_groups.append({"params": params, "lr": lr, "name": module_name})
                 used_params.update(id(p) for p in params)
@@ -100,7 +116,9 @@ def build_param_lr_groups(model, cfg):
             ReferenceError(f"⚠️ module path `{module_name}` not found in vla")
 
     # assign base learning rate to the remaining unused parameters (exclude frozen ones)
-    other_params = [p for p in model.parameters() if id(p) not in used_params and id(p) not in frozen_params]
+    other_params = [
+        p for p in model.parameters() if p.requires_grad and id(p) not in used_params and id(p) not in frozen_params
+    ]
     if other_params:
         param_groups.append({"params": other_params, "lr": base_lr, "name": "base"})
 
@@ -165,30 +183,26 @@ class TrainerUtils:
           - model:
         """
         frozen = []
-        print("#"*30)
-        print(freeze_modules)
-        if freeze_modules and type(freeze_modules) == str:
-            # split and remove whitespace
-            patterns = [p.strip() for p in freeze_modules.split(",") if p.strip()] if freeze_modules else []
+        patterns = normalize_module_patterns(freeze_modules)
 
-            for path in patterns:
-                # split the "relative path" by dots, for example "action_model.net" → ["action_model", "net"]
-                attrs = path.split(".")
-                module = model
-                try:
-                    for attr in attrs:
-                        module = getattr(module, attr)
-                    # if the module is successfully get, freeze it and its all submodule parameters
-                    for param in module.parameters():
-                        param.requires_grad = False
-                    frozen.append(path)
-                except AttributeError:
-                    # if the attribute does not exist, skip and print warning
-                    print(f"⚠️ module path does not exist, cannot freeze: {path}")
-                    continue
+        for path in patterns:
+            # split the "relative path" by dots, for example "action_model.net" → ["action_model", "net"]
+            attrs = path.split(".")
+            module = model
+            try:
+                for attr in attrs:
+                    module = getattr(module, attr)
+                # if the module is successfully get, freeze it and its all submodule parameters
+                for param in module.parameters():
+                    param.requires_grad = False
+                frozen.append(path)
+            except AttributeError:
+                # if the attribute does not exist, skip and print warning
+                print(f"⚠️ module path does not exist, cannot freeze: {path}")
+                continue
 
         # accelerator.wait_for_everyone()  # synchronize when distributed training
-        if dist.get_rank == 0:
+        if not dist.is_initialized() or dist.get_rank() == 0:
             print(f"🔒 Frozen modules with re pattern: {frozen}")
         return model
 
@@ -198,7 +212,7 @@ class TrainerUtils:
         print the total number of parameters and trainable parameters of the model
         :param model: PyTorch model instance
         """
-        if dist.get_rank() != 0:
+        if dist.is_initialized() and dist.get_rank() != 0:
             return
         print("📊 model parameter statistics:")
         num_params = sum(p.numel() for p in model.parameters())

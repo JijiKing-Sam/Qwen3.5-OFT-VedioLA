@@ -102,7 +102,9 @@ def setup_optimizer_and_scheduler(model, cfg) -> Tuple[torch.optim.Optimizer, to
 
 
 class VLAMTrainer(TrainerUtils):
-    def __init__(self, cfg, model, vla_train_dataloader, vlm_train_dataloader, optimizer, lr_scheduler, accelerator):
+    def __init__(
+        self, cfg, model, vla_train_dataloader, vlm_train_dataloader, optimizer=None, lr_scheduler=None, accelerator=None
+    ):
         self.config = cfg
         self.model = model
         self.vla_train_dataloader = vla_train_dataloader
@@ -133,6 +135,8 @@ class VLAMTrainer(TrainerUtils):
         )
         self.model = self.freeze_backbones(self.model, freeze_modules=freeze_modules)
         self.print_trainable_parameters(self.model)
+
+        self.optimizer, self.lr_scheduler = setup_optimizer_and_scheduler(model=self.model, cfg=self.config)
 
         self.model, self.optimizer, self.vla_train_dataloader, self.vlm_train_dataloader = (
             self.setup_distributed_training(
@@ -381,15 +385,11 @@ def main(cfg) -> None:
     output_dir = setup_directories(cfg=cfg)
     vla = build_framework(cfg)
     vla_train_dataloader, vlm_train_dataloader = prepare_data(cfg=cfg, accelerator=accelerator, output_dir=output_dir)
-    optimizer, lr_scheduler = setup_optimizer_and_scheduler(model=vla, cfg=cfg)
-
     trainer = VLAMTrainer(
         cfg=cfg,
         model=vla,
         vla_train_dataloader=vla_train_dataloader,
         vlm_train_dataloader=vlm_train_dataloader,
-        optimizer=optimizer,
-        lr_scheduler=lr_scheduler,
         accelerator=accelerator,
     )
 

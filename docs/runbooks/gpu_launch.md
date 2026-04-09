@@ -64,6 +64,7 @@ Interpretation:
 - The goal is to confirm loss starts moving, checkpoints save, and the job stays healthy.
 - Outputs go under `results/tiny_overfit/<run_id>/`.
 - This profile was verified on a single `RTX PRO 6000 96GB`; full fine-tuning of all `Qwen35OFT` parameters OOMed on that same card.
+- For single-card continuation on that same `96GB` card, use `UNFREEZE_LAST_TEXT_LAYERS=2` with `sdpa`; that profile was validated through `200` steps and saved `steps_100`, `steps_200`, and `final_model`.
 
 ## Step 4: Start The Formal 80K Run
 

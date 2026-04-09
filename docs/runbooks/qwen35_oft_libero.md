@@ -27,6 +27,29 @@ By default this smoke wrapper now uses:
 
 This is the validated single-GPU sanity profile for a `96GB` card.
 
+Validated single-card partial-unfreeze profile on `RTX PRO 6000 96GB`:
+
+```bash
+RUN_ID=qwen35oft_tiny_last2_200_fix3 \
+NUM_PROCESSES=1 \
+ATTN_IMPLEMENTATION=sdpa \
+PER_DEVICE_BATCH_SIZE=1 \
+STEP_BUDGET=200 \
+NUM_WARMUP_STEPS=20 \
+SAVE_INTERVAL=100 \
+EVAL_INTERVAL=50 \
+LOGGING_FREQUENCY=10 \
+UNFREEZE_LAST_TEXT_LAYERS=2 \
+bash scripts/experiments/run_qwen35oft_tiny_overfit.sh
+```
+
+Observed behavior:
+
+- `full fine-tune` still OOMs on a single `96GB` card
+- `UNFREEZE_LAST_TEXT_LAYERS=2` reduces trainable parameters to about `286M`
+- this profile successfully writes `steps_100`, `steps_200`, and `final_model`
+- reference run id: `qwen35oft_tiny_last2_200_fix3`
+
 6. For raw model construction smoke, run:
 
 ```bash

@@ -21,6 +21,7 @@ DATA_MIX="${DATA_MIX:-libero_spatial}"
 RUN_ROOT_DIR="${RUN_ROOT_DIR:-./results/Checkpoints}"
 RUN_ID="${RUN_ID:-videola_qwen35_oft_libero_spatial}"
 FREEZE_MODULES="${FREEZE_MODULES:-}"
+UNFREEZE_LAST_TEXT_LAYERS="${UNFREEZE_LAST_TEXT_LAYERS:-}"
 MAX_TRAIN_STEPS="${MAX_TRAIN_STEPS:-80000}"
 SAVE_INTERVAL="${SAVE_INTERVAL:-5000}"
 EVAL_INTERVAL="${EVAL_INTERVAL:-100}"
@@ -32,6 +33,33 @@ WANDB_PROJECT="${WANDB_PROJECT:-videola}"
 PRETRAINED_CHECKPOINT="${PRETRAINED_CHECKPOINT:-}"
 IS_RESUME="${IS_RESUME:-false}"
 RUN_PREFLIGHT="${RUN_PREFLIGHT:-0}"
+
+if [[ -z "${FREEZE_MODULES}" && -n "${UNFREEZE_LAST_TEXT_LAYERS}" ]]; then
+  if ! [[ "${UNFREEZE_LAST_TEXT_LAYERS}" =~ ^[0-9]+$ ]]; then
+    echo "UNFREEZE_LAST_TEXT_LAYERS must be a non-negative integer" >&2
+    exit 1
+  fi
+
+  TOTAL_TEXT_LAYERS=32
+  if (( UNFREEZE_LAST_TEXT_LAYERS > TOTAL_TEXT_LAYERS )); then
+    UNFREEZE_LAST_TEXT_LAYERS="${TOTAL_TEXT_LAYERS}"
+  fi
+
+  FREEZE_LIST=(
+    "qwen_vl_interface.model.lm_head"
+    "qwen_vl_interface.model.model.visual"
+    "qwen_vl_interface.model.model.language_model.embed_tokens"
+  )
+
+  FREEZE_UNTIL=$(( TOTAL_TEXT_LAYERS - UNFREEZE_LAST_TEXT_LAYERS ))
+  for (( layer_idx=0; layer_idx<FREEZE_UNTIL; layer_idx++ )); do
+    FREEZE_LIST+=("qwen_vl_interface.model.model.language_model.layers.${layer_idx}")
+  done
+
+  IFS=,
+  FREEZE_MODULES="${FREEZE_LIST[*]}"
+  unset IFS
+fi
 
 if [[ -n "${CONDA_EXE}" ]]; then
   eval "$("${CONDA_EXE}" shell.bash hook)"
@@ -92,6 +120,7 @@ fi
   echo "data_mix=${DATA_MIX}"
   echo "run_root_dir=${RUN_ROOT_DIR}"
   echo "run_id=${RUN_ID}"
+  echo "unfreeze_last_text_layers=${UNFREEZE_LAST_TEXT_LAYERS}"
   echo "num_processes=${NUM_PROCESSES}"
   echo "max_train_steps=${MAX_TRAIN_STEPS}"
   echo "save_interval=${SAVE_INTERVAL}"
