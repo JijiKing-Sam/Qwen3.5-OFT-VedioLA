@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from typing import Any, Iterable
 
 try:
@@ -8,6 +9,9 @@ except ImportError:  # pragma: no cover
     LoraConfig = None
     PeftModel = None
     get_peft_model = None
+
+
+_FALLBACK_LOGGER = logging.getLogger(__name__)
 
 
 def _as_bool(value: Any) -> bool:
@@ -60,14 +64,24 @@ def apply_lora_if_configured(model, vlm_cfg, logger=None):
     )
 
     if logger is not None:
-        logger.info(
-            "Enabled LoRA for VLM backbone (rank=%s, alpha=%s, dropout=%s, target_modules=%s, init=%s)",
-            rank,
-            alpha,
-            dropout,
-            target_modules,
-            init_lora_weights,
-        )
+        try:
+            logger.info(
+                "Enabled LoRA for VLM backbone (rank=%s, alpha=%s, dropout=%s, target_modules=%s, init=%s)",
+                rank,
+                alpha,
+                dropout,
+                target_modules,
+                init_lora_weights,
+            )
+        except RuntimeError:
+            _FALLBACK_LOGGER.info(
+                "Enabled LoRA for VLM backbone (rank=%s, alpha=%s, dropout=%s, target_modules=%s, init=%s)",
+                rank,
+                alpha,
+                dropout,
+                target_modules,
+                init_lora_weights,
+            )
 
     if hasattr(wrapped, "print_trainable_parameters"):
         wrapped.print_trainable_parameters()
