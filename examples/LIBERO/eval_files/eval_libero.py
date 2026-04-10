@@ -57,6 +57,53 @@ class Args:
     post_process_action: bool = True
 
     job_name: str = "test"
+    save_action_traces: bool = True
+    save_episode_summaries: bool = True
+
+
+def _safe_task_segment(task_description: str) -> str:
+    return "".join(ch if ch.isalnum() or ch in {"_", "-"} else "_" for ch in task_description.replace(" ", "_"))
+
+
+def _compute_episode_diagnostics(
+    actions: list[np.ndarray],
+    latencies_ms: list[float],
+    final_obs,
+    success: bool,
+    policy_steps: int,
+    total_env_steps: int,
+    max_steps: int,
+):
+    action_array = np.stack(actions) if actions else np.zeros((0, 7), dtype=np.float32)
+    world_vectors = action_array[:, :3] if len(action_array) else np.zeros((0, 3), dtype=np.float32)
+    rotation_deltas = action_array[:, 3:6] if len(action_array) else np.zeros((0, 3), dtype=np.float32)
+    gripper = action_array[:, 6] if len(action_array) else np.zeros((0,), dtype=np.float32)
+    latency_array = np.asarray(latencies_ms, dtype=np.float32)
+
+    final_eef_pos = np.asarray(final_obs["robot0_eef_pos"], dtype=np.float32)
+    final_eef_quat = np.asarray(final_obs["robot0_eef_quat"], dtype=np.float32)
+    final_gripper_qpos = np.asarray(final_obs["robot0_gripper_qpos"], dtype=np.float32)
+
+    diagnostics = {
+        "success": bool(success),
+        "termination_reason": "success" if success else "timeout",
+        "policy_steps": int(policy_steps),
+        "total_env_steps": int(total_env_steps),
+        "max_policy_steps": int(max_steps),
+        "latency_ms_mean": float(latency_array.mean()) if latency_array.size else None,
+        "latency_ms_std": float(latency_array.std()) if latency_array.size else None,
+        "latency_ms_max": float(latency_array.max()) if latency_array.size else None,
+        "action_l2_mean": float(np.linalg.norm(action_array, axis=1).mean()) if len(action_array) else None,
+        "world_vector_l2_mean": float(np.linalg.norm(world_vectors, axis=1).mean()) if len(world_vectors) else None,
+        "rotation_delta_l2_mean": float(np.linalg.norm(rotation_deltas, axis=1).mean()) if len(rotation_deltas) else None,
+        "gripper_open_fraction": float((gripper > 0).mean()) if len(gripper) else None,
+        "first_action": action_array[0].tolist() if len(action_array) else None,
+        "last_action": action_array[-1].tolist() if len(action_array) else None,
+        "final_eef_pos": final_eef_pos.tolist(),
+        "final_eef_quat": final_eef_quat.tolist(),
+        "final_gripper_qpos": final_gripper_qpos.tolist(),
+    }
+    return action_array, diagnostics
 
 
 def eval_libero(args: Args) -> None:
@@ -103,6 +150,11 @@ def eval_libero(args: Args) -> None:
 
     # Start evaluation
     total_episodes, total_successes = 0, 0
+    run_summary = {
+        "args": dataclasses.asdict(args),
+        "task_suite_name": args.task_suite_name,
+        "episodes": [],
+    }
     for task_id in tqdm.tqdm(range(num_tasks_to_run)):
         # Get task
         task = task_suite.get_task(task_id)
@@ -129,9 +181,11 @@ def eval_libero(args: Args) -> None:
             t = 0
             replay_images = []
             full_actions = []
+            inference_latencies_ms = []
 
             logging.info(f"Starting episode {task_episodes + 1}...")
             step = 0
+            done = False
             
             # full_actions = np.load("./debug/action.npy")
             
@@ -184,7 +238,7 @@ def eval_libero(args: Args) -> None:
                 response = client_model.step(example=example_dict, step=step) 
                 
                 end_time = time.time()
-                # print(f"time: {end_time - start_time}")
+                inference_latencies_ms.append((end_time - start_time) * 1000.0)
                 
                 # # 
                 raw_action = response["raw_action"]
@@ -222,18 +276,44 @@ def eval_libero(args: Args) -> None:
 
             # Save a replay video of the episode
             suffix = "success" if done else "failure"
-            task_segment = task_description.replace(" ", "_")
+            task_segment = _safe_task_segment(task_description)
+            output_dir = pathlib.Path(args.video_out_path)
+            video_path = output_dir / f"rollout_{task_segment}_episode{episode_idx}_{suffix}.mp4"
             imageio.mimwrite(
-                pathlib.Path(args.video_out_path)
-                / f"rollout_{task_segment}_episode{episode_idx}_{suffix}.mp4",
+                video_path,
                 [np.asarray(x) for x in replay_images],
                 fps=10,
             )
-            
-            full_actions = np.stack(full_actions)
-            # np.save(pathlib.Path(args.video_out_path) / f"rollout_{task_segment}_episode{episode_idx}_{suffix}.npy", full_actions)
-            
-            # print(pathlib.Path(args.video_out_path) / f"rollout_{task_segment}_episode{episode_idx}_{suffix}.mp4")
+
+            action_array, diagnostics = _compute_episode_diagnostics(
+                actions=full_actions,
+                latencies_ms=inference_latencies_ms,
+                final_obs=obs,
+                success=done,
+                policy_steps=step,
+                total_env_steps=t,
+                max_steps=max_steps,
+            )
+            diagnostics.update(
+                {
+                    "task_id": int(task_id),
+                    "episode_idx": int(episode_idx),
+                    "task_description": task_description,
+                    "video_path": str(video_path),
+                }
+            )
+            if args.save_action_traces:
+                action_path = output_dir / f"rollout_{task_segment}_episode{episode_idx}_{suffix}.npy"
+                np.save(action_path, action_array)
+                diagnostics["action_trace_path"] = str(action_path)
+            if args.save_episode_summaries:
+                summary_path = output_dir / f"rollout_{task_segment}_episode{episode_idx}_{suffix}.json"
+                with open(summary_path, "w", encoding="utf-8") as f:
+                    json.dump(diagnostics, f, indent=2)
+                diagnostics["summary_path"] = str(summary_path)
+
+            run_summary["episodes"].append(diagnostics)
+
             # Log current results
             logging.info(f"Success: {done}")
             logging.info(f"# episodes completed so far: {total_episodes}")
@@ -249,10 +329,18 @@ def eval_libero(args: Args) -> None:
             f"Current total success rate: {float(total_successes) / float(total_episodes)}"
         )
 
+    total_success_rate = float(total_successes) / float(total_episodes)
     logging.info(
-        f"Total success rate: {float(total_successes) / float(total_episodes)}"
+        f"Total success rate: {total_success_rate}"
     )
     logging.info(f"Total episodes: {total_episodes}")
+    run_summary["total_episodes"] = total_episodes
+    run_summary["total_successes"] = total_successes
+    run_summary["total_success_rate"] = total_success_rate
+    summary_path = pathlib.Path(args.video_out_path) / "eval_summary.json"
+    with open(summary_path, "w", encoding="utf-8") as f:
+        json.dump(run_summary, f, indent=2)
+    logging.info("Saved eval summary to %s", summary_path)
 
 
 def _get_libero_env(task, resolution, seed):
