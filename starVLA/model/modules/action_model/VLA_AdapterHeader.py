@@ -30,6 +30,7 @@ class VLA_Adapter_L1RegressionActionHead(nn.Module):
 
         self.action_dim = action_dim
         self.hidden_dim = hidden_dim
+        self.input_dim = input_dim
 
         self.num_actions_chunk = self.config.framework.action_model.get("num_actions_chunk", None)
         if self.num_actions_chunk is None:
@@ -41,14 +42,23 @@ class VLA_Adapter_L1RegressionActionHead(nn.Module):
             torch.zeros(self.num_actions_chunk, action_dim * hidden_dim)
         )
         nn.init.normal_(self.action_chunk_embeddings, mean=0.0, std=0.02)
+
+        # Adapter/task states come from the VLM hidden size, while the residual
+        # blocks operate in `hidden_dim`. Project all conditioning streams once
+        # so the attention blocks see a consistent channel width.
+        self.condition_projector = (
+            nn.Linear(input_dim, hidden_dim) if input_dim != hidden_dim else nn.Identity()
+        )
         
+        # The MLP consumes chunk queries after they are reshaped to
+        # [batch, num_actions_chunk, action_dim * hidden_dim].
         self.model = MLPResNet(
-            num_blocks=24, 
-            input_dim=input_dim*action_dim, 
-            hidden_dim=hidden_dim, 
+            num_blocks=24,
+            input_dim=hidden_dim * action_dim,
+            hidden_dim=hidden_dim,
             output_dim=action_dim,
-            use_pro_version=use_pro_version
-            )
+            use_pro_version=use_pro_version,
+        )
  
 
     def predict_action(
@@ -79,6 +89,11 @@ class VLA_Adapter_L1RegressionActionHead(nn.Module):
         
         task_hidden_states = actions_hidden_states[:, :, :-self.action_query_num, :]
         assert vision_hidden_len == task_hidden_states.shape[2], "Vision hidden length mismatch"
+
+        action_query_states = self.condition_projector(action_query_states)
+        task_hidden_states = self.condition_projector(task_hidden_states)
+        if proprio_features is not None:
+            proprio_features = self.condition_projector(proprio_features)
 
         # 3. Action Chunk Queries Init
         cond_actions_hidden_states = torch.zeros(
