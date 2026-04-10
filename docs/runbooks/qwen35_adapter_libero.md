@@ -36,4 +36,6 @@ bash examples/LIBERO/train_files/run_qwen35adapter_libero_train.sh
 
 - `Qwen35Adapter` is registered by `starVLA/model/framework/QwenAdapter.py`.
 - The action head auto-resolves active VLM namespace (`qwen35` or `qwenvl`).
-- Start with `FREEZE_MODULES=qwen_vl_interface` for memory stability; progressively unfreeze text layers later.
+- The default adapter recipe now tracks released `VLA-Adapter` more closely: `dual-view + proprio + LoRA`.
+- Tiny-overfit runs clear `FREEZE_MODULES=qwen_vl_interface` automatically when `USE_LORA=true`, because PEFT already freezes the backbone and only keeps LoRA weights trainable.
+- Older non-LoRA checkpoints can now be loaded into the LoRA-enabled config through a PEFT compatibility remap during checkpoint load.

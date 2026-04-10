@@ -13,6 +13,7 @@ from starVLA.model.modules.vlm.config_utils import (
     get_chat_template_kwargs,
     maybe_disable_thinking,
 )
+from starVLA.model.modules.vlm.peft_utils import apply_lora_if_configured
 
 try:
     from transformers import Qwen3_5ForConditionalGeneration
@@ -64,6 +65,7 @@ class _QWen3_5_VL_Interface(nn.Module):
         self._ACTION_TOKEN_MAX = _ACTION_TOKEN_MAX
 
         maybe_disable_thinking(model=self.model, processor=self.processor)
+        self.model = apply_lora_if_configured(self.model, vlm_cfg, logger=logger)
 
     def forward(self, **kwargs) -> CausalLMOutputWithPast:
         with torch.autocast("cuda", dtype=torch.bfloat16):

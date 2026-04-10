@@ -12,6 +12,7 @@ import numpy as np
 import torch
 
 from accelerate.logging import get_logger
+from starVLA.model.modules.vlm.peft_utils import remap_checkpoint_keys_for_peft
 
 logger = get_logger(__name__)
 
@@ -292,6 +293,8 @@ class TrainerUtils:
                 checkpoint = torch.load(checkpoint_path, map_location="cpu")
         except Exception as e:
             raise RuntimeError(f"❌ loading checkpoint failed: {e}")
+
+        checkpoint = remap_checkpoint_keys_for_peft(model, checkpoint)
 
         loaded_modules = []
 

@@ -8,6 +8,7 @@ from omegaconf import OmegaConf
 
 from deployment.model_server.tools.websocket_policy_server import WebsocketPolicyServer
 from starVLA.model.framework import build_framework
+from starVLA.model.modules.vlm.peft_utils import remap_checkpoint_keys_for_peft
 
 
 def load_config(config_yaml: str, framework_name: str | None, base_vlm: str | None):
@@ -57,6 +58,7 @@ def maybe_load_checkpoint(vla, checkpoint_path: str | None, strict_load: bool) -
 
     resolved_path = resolve_checkpoint_path(checkpoint_path)
     state_dict = load_state_dict_from_path(resolved_path)
+    state_dict = remap_checkpoint_keys_for_peft(vla, state_dict)
     incompatible = vla.load_state_dict(state_dict, strict=strict_load)
     missing_keys = list(getattr(incompatible, "missing_keys", []))
     unexpected_keys = list(getattr(incompatible, "unexpected_keys", []))

@@ -13,6 +13,10 @@ NUM_PROCESSES="${NUM_PROCESSES:-1}"
 ATTN_IMPLEMENTATION="${ATTN_IMPLEMENTATION:-sdpa}"
 PER_DEVICE_BATCH_SIZE="${PER_DEVICE_BATCH_SIZE:-1}"
 FREEZE_MODULES="${FREEZE_MODULES:-qwen_vl_interface}"
+USE_LORA="${USE_LORA:-true}"
+LORA_RANK="${LORA_RANK:-64}"
+LORA_ALPHA="${LORA_ALPHA:-128}"
+LORA_DROPOUT="${LORA_DROPOUT:-0.0}"
 UNFREEZE_LAST_TEXT_LAYERS="${UNFREEZE_LAST_TEXT_LAYERS:-}"
 NUM_WARMUP_STEPS="${NUM_WARMUP_STEPS:-10}"
 IS_DEBUG="${IS_DEBUG:-false}"
@@ -27,6 +31,10 @@ DEMO_DATA_ROOT="${DEMO_DATA_ROOT:-./playground/demo_data}"
 CONFIG_YAML="${CONFIG_YAML:-./examples/LIBERO/train_files/starvla_qwen35_adapter_demo_sim_pick_place.yaml}"
 
 if [[ -n "${UNFREEZE_LAST_TEXT_LAYERS}" && "${FREEZE_MODULES}" == "qwen_vl_interface" ]]; then
+  FREEZE_MODULES=""
+fi
+
+if [[ "${USE_LORA}" == "true" && "${FREEZE_MODULES}" == "qwen_vl_interface" ]]; then
   FREEZE_MODULES=""
 fi
 
@@ -51,6 +59,10 @@ bash scripts/bootstrap/remote_gpu_preflight.sh
   echo "attn_implementation=${ATTN_IMPLEMENTATION}"
   echo "per_device_batch_size=${PER_DEVICE_BATCH_SIZE}"
   echo "freeze_modules=${FREEZE_MODULES}"
+  echo "use_lora=${USE_LORA}"
+  echo "lora_rank=${LORA_RANK}"
+  echo "lora_alpha=${LORA_ALPHA}"
+  echo "lora_dropout=${LORA_DROPOUT}"
   echo "unfreeze_last_text_layers=${UNFREEZE_LAST_TEXT_LAYERS}"
   echo "num_warmup_steps=${NUM_WARMUP_STEPS}"
   echo "is_debug=${IS_DEBUG}"
@@ -88,6 +100,10 @@ bash scripts/bootstrap/remote_gpu_preflight.sh
     WANDB_PROJECT="${WANDB_PROJECT}" \
     PER_DEVICE_BATCH_SIZE="${PER_DEVICE_BATCH_SIZE}" \
     FREEZE_MODULES="${FREEZE_MODULES}" \
+    USE_LORA="${USE_LORA}" \
+    LORA_RANK="${LORA_RANK}" \
+    LORA_ALPHA="${LORA_ALPHA}" \
+    LORA_DROPOUT="${LORA_DROPOUT}" \
     UNFREEZE_LAST_TEXT_LAYERS="${UNFREEZE_LAST_TEXT_LAYERS}" \
     bash examples/LIBERO/train_files/run_qwen35adapter_libero_train.sh \
       "${TRAIN_CLI_ARGS[@]}"

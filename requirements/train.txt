@@ -1,4 +1,5 @@
 -r smoke.txt
 deepspeed==0.16.9
 diffusers
+peft
 wandb
