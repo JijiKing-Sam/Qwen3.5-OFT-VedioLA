@@ -174,8 +174,15 @@ class ModelClient:
         if policy_ckpt_path is None:
             raise ValueError("policy_ckpt_path is required when action_chunk_size is not provided")
         model_config, _ = _read_mode_config(policy_ckpt_path)  # read config and norm_stats
-        # import ipdb; ipdb.set_trace()
-        return model_config['framework']['action_model']['future_action_window_size'] + 1
+        action_model_cfg = model_config["framework"]["action_model"]
+        if "future_action_window_size" in action_model_cfg:
+            return action_model_cfg["future_action_window_size"] + 1
+        if "num_actions_chunk" in action_model_cfg:
+            return action_model_cfg["num_actions_chunk"]
+        raise KeyError(
+            "Unable to infer action chunk size from checkpoint config; expected "
+            "`future_action_window_size` or `num_actions_chunk`."
+        )
 
 
     def _resize_image(self, image: np.ndarray) -> np.ndarray:
