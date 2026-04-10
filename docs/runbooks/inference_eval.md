@@ -70,8 +70,31 @@ Or use the validated one-shot local wrapper:
 bash scripts/run_qwen35_libero_dry_run_local.sh
 ```
 
+## C. Trained Checkpoint Sanity
+
+Once you have a real `Qwen35OFT` checkpoint, reuse the same server entrypoint and load weights explicitly:
+
+```bash
+PRETRAINED_CHECKPOINT=/path/to/steps_200_pytorch_model.pt \
+bash examples/LIBERO/eval_files/run_qwen35oft_from_config_server.sh
+```
+
+Then point LIBERO eval at the same checkpoint so it can read `config.yaml` and `dataset_statistics.json`:
+
+```bash
+python examples/LIBERO/eval_files/eval_libero.py \
+  --args.host 127.0.0.1 \
+  --args.port 10095 \
+  --args.task-suite-name libero_spatial \
+  --args.max-tasks 1 \
+  --args.num-trials-per-task 1 \
+  --args.pretrained-path /path/to/steps_200_pytorch_model.pt \
+  --args.video-out-path results/debug/libero_qwen35_checkpoint_sanity
+```
+
 Notes:
 
 - The dry-run above validates interface compatibility only. It does not measure policy quality.
 - Without a trained `Qwen35OFT` checkpoint, the action head is effectively random, so success rate should be treated as a pipeline signal, not a model result.
+- The checkpoint-backed path above is the preferred first sanity once tiny-overfit produces a usable model file.
 - The dedicated LIBERO runbook is [libero_dry_run.md](/F:/videola-starvla-qwen35/docs/runbooks/libero_dry_run.md).

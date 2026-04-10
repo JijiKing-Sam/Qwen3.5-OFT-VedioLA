@@ -96,7 +96,6 @@ class WebsocketPolicyServer:
         """
         req_id = msg.get("request_id", "default")
         mtype = msg.get("type", "infer")          # default = infer
-        msg       # when no explicit payload, treat top-level as payload
 
         # ping
         if mtype == "ping":
@@ -111,11 +110,12 @@ class WebsocketPolicyServer:
                     "ok": False,
                     "type": "inference_result",
                     "request_id": req_id,
-                    "error": {"message": "Payload must be a dict", "payload_type": str(type(payload))}
+                    "error": {"message": "Payload must be a dict", "payload_type": str(type(msg))},
                 }
-            try:
 
-                ouput_dict = self._policy.predict_action(**msg)
+            payload = {k: v for k, v in msg.items() if k not in {"type", "request_id"}}
+            try:
+                ouput_dict = self._policy.predict_action(**payload)
             except Exception as e:
                 logging.exception("Policy inference error (request_id=%s)", req_id)
                 logging.exception(e)

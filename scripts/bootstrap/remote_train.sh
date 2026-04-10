@@ -63,7 +63,7 @@ activate_python_env() {
 
 activate_python_env
 
-python -m pip install --upgrade pip setuptools wheel
+python -m pip install --upgrade pip "setuptools<82" wheel
 python -m pip install --upgrade torch torchvision torchaudio --index-url "${TORCH_INDEX_URL}"
 python -m pip install -r requirements/train.txt
 

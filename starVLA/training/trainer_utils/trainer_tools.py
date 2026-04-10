@@ -166,6 +166,53 @@ import torch.distributed as dist
 
 class TrainerUtils:
     @staticmethod
+    def maybe_enable_gradient_checkpointing(model, enabled=False):
+        """
+        Best-effort activation checkpointing for the active VLM backend.
+
+        This is intentionally tolerant:
+        - do nothing when the backend does not expose checkpointing hooks
+        - force `use_cache=False` when checkpointing is enabled
+        - enable input grads when the backend supports it
+        """
+        if not enabled:
+            return model
+
+        backends = []
+        seen = set()
+        for attr in ("qwen_vl_interface", "qwen35_interface"):
+            interface = getattr(model, attr, None)
+            backend = getattr(interface, "model", None) if interface is not None else None
+            if backend is None or id(backend) in seen:
+                continue
+            seen.add(id(backend))
+            backends.append((attr, backend))
+
+        enabled_backends = []
+        for backend_name, backend in backends:
+            if hasattr(backend, "gradient_checkpointing_enable"):
+                backend.gradient_checkpointing_enable()
+                enabled_backends.append(backend_name)
+
+            if hasattr(backend, "enable_input_require_grads"):
+                backend.enable_input_require_grads()
+
+            if hasattr(backend, "config"):
+                backend.config.use_cache = False
+
+            generation_config = getattr(backend, "generation_config", None)
+            if generation_config is not None and hasattr(generation_config, "use_cache"):
+                generation_config.use_cache = False
+
+        if not dist.is_initialized() or dist.get_rank() == 0:
+            if enabled_backends:
+                print(f"🧠 Enabled gradient checkpointing for: {enabled_backends}")
+            else:
+                print("⚠️ No gradient-checkpointing-capable backend found; continuing without it.")
+
+        return model
+
+    @staticmethod
     def freeze_backbones(model, freeze_modules=""):
         """
         directly freeze the specified submodules based on the relative module path list (patterns), no longer recursively find all submodule names:

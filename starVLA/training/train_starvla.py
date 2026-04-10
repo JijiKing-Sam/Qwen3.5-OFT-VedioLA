@@ -126,6 +126,10 @@ class VLATrainer(TrainerUtils):
             else None
         )
         self.model = self.freeze_backbones(self.model, freeze_modules=freeze_modules)
+        self.model = self.maybe_enable_gradient_checkpointing(
+            self.model,
+            enabled=getattr(self.config.trainer, "enable_gradient_checkpointing", False),
+        )
         self.print_trainable_parameters(self.model)
 
         self.optimizer, self.lr_scheduler = setup_optimizer_and_scheduler(model=self.model, cfg=self.config)
