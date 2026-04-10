@@ -27,22 +27,57 @@ IGNORE_INDEX = -100
 
 from starVLA.model.framework.base_framework import baseframework
 from starVLA.model.modules.vlm import get_vlm_model
+from starVLA.model.modules.vlm.config_utils import get_active_vlm_config
 from starVLA.model.modules.action_model.VLA_AdapterHeader import get_action_model, VLA_Adapter_L1RegressionActionHead
 from starVLA.training.trainer_utils.trainer_tools import resize_images
 from starVLA.model.tools import FRAMEWORK_REGISTRY
-from starVLA.model.modules.vlm.QWen3 import IMAGE_TOKEN_INDEX, VIDEO_TOKEN_INDEX
+from starVLA.model.modules.vlm.QWen3 import IMAGE_TOKEN_INDEX
 
-def get_image_token_counts(batch_inputs):
-    IMAGE_TOKEN_ID = IMAGE_TOKEN_INDEX 
-    
-    # input_ids shape: [Batch_Size, Seq_Len]
-    # result shape: [Batch_Size]
-    num_tokens_per_sample = torch.sum(batch_inputs['input_ids'] == IMAGE_TOKEN_ID, dim=1)
-    # also get the last index of the image token for each sample if needed
-    last_index_per_sample = (batch_inputs['input_ids'] == IMAGE_TOKEN_ID).int().cumsum(dim=1).argmax(dim=1)
-    # also get the first index of the image token for each sample if needed
-    first_index_per_sample = (batch_inputs['input_ids'] == IMAGE_TOKEN_ID).int().cumsum(dim=1).argmin(dim=1)
-    
+
+def resolve_image_token_id(vlm_interface) -> int:
+    """Best-effort resolution for the image placeholder token id across Qwen variants."""
+    model_cfg = getattr(getattr(vlm_interface, "model", None), "config", None)
+    processor = getattr(vlm_interface, "processor", None)
+    tokenizer = getattr(processor, "tokenizer", None)
+
+    candidates = [
+        getattr(vlm_interface, "image_token_id", None),
+        getattr(processor, "image_token_id", None),
+        getattr(model_cfg, "image_token_id", None),
+    ]
+    for token_id in candidates:
+        if isinstance(token_id, int) and token_id >= 0:
+            return token_id
+
+    if tokenizer is not None and hasattr(tokenizer, "convert_tokens_to_ids"):
+        for token in ("<|image_pad|>", "<image>"):
+            token_id = tokenizer.convert_tokens_to_ids(token)
+            if isinstance(token_id, int):
+                unk_id = getattr(tokenizer, "unk_token_id", None)
+                if token_id >= 0 and token_id != unk_id:
+                    return token_id
+
+    return IMAGE_TOKEN_INDEX
+
+
+def get_image_token_counts(batch_inputs, image_token_id: int):
+    input_ids = batch_inputs["input_ids"]
+    image_mask = input_ids.eq(image_token_id)
+    num_tokens_per_sample = image_mask.sum(dim=1)
+
+    seq_len = input_ids.shape[1]
+    positions = torch.arange(seq_len, device=input_ids.device).unsqueeze(0).expand_as(input_ids)
+
+    first_index_per_sample = torch.where(
+        image_mask, positions, torch.full_like(positions, seq_len)
+    ).min(dim=1).values
+    last_index_per_sample = torch.where(
+        image_mask, positions, torch.full_like(positions, -1)
+    ).max(dim=1).values
+
+    if torch.any(num_tokens_per_sample == 0):
+        raise ValueError("No image token found in qwen inputs; verify processor/model token mapping.")
+
     return num_tokens_per_sample, first_index_per_sample, last_index_per_sample
 
 
@@ -66,7 +101,8 @@ class ProprioProjector(nn.Module):
         projected_features = self.fc2(projected_features)
         return projected_features
 
-# Only support for Qwen2.5 now @ PR 60
+# Keep backward compatibility while enabling Qwen3.5 adapter training.
+@FRAMEWORK_REGISTRY.register("Qwen35Adapter")
 @FRAMEWORK_REGISTRY.register("QwenAdapter")
 class Qwen_Adapter(baseframework):
     """
@@ -93,8 +129,11 @@ class Qwen_Adapter(baseframework):
         super().__init__()
         self.config = config
         self.phase = self.config.framework.action_model.get("phase", "Training")
+        self.vlm_namespace, _ = get_active_vlm_config(self.config)
         self.qwen_vl_interface = get_vlm_model(config=self.config)
-        self.config.framework.qwenvl.vl_hidden_dim = self.qwen_vl_interface.model.config.hidden_size
+        vl_hidden_dim = self.qwen_vl_interface.model.config.hidden_size
+        self.config.framework[self.vlm_namespace].vl_hidden_dim = vl_hidden_dim
+        self.image_token_id = resolve_image_token_id(self.qwen_vl_interface)
         self.action_query_num = self.config.framework.action_model.get("action_query_num", 64)
         self.action_model: VLA_Adapter_L1RegressionActionHead = get_action_model(config=self.config)
         self.action_query = nn.Parameter(torch.randn(self.action_query_num, self.qwen_vl_interface.model.config.hidden_size))
@@ -182,7 +221,8 @@ class Qwen_Adapter(baseframework):
             
             return output
         # Register hook on text embedding layer (this is OK!)
-        embedding_layer = self.qwen_vl_interface.model.model.get_input_embeddings()
+        embedding_owner = getattr(self.qwen_vl_interface.model, "model", self.qwen_vl_interface.model)
+        embedding_layer = embedding_owner.get_input_embeddings()
         hook_handle = embedding_layer.register_forward_hook(inject_query_hook)
         try:
             with torch.autocast("cuda", dtype=torch.bfloat16):
@@ -200,7 +240,9 @@ class Qwen_Adapter(baseframework):
         # Extract features (FULLY VECTORIZED)
         # ============================================================
         multi_layer_hidden_states = []
-        num_images, first_index_per_sample, last_index_per_sample = get_image_token_counts(qwen_inputs)
+        num_images, first_index_per_sample, last_index_per_sample = get_image_token_counts(
+            qwen_inputs, self.image_token_id
+        )
         
         max_patch_len = -999
         for b in range(batch_size):
@@ -358,7 +400,8 @@ class Qwen_Adapter(baseframework):
             
             return output
         # Register hook on text embedding layer (this is OK!)
-        embedding_layer = self.qwen_vl_interface.model.model.get_input_embeddings()
+        embedding_owner = getattr(self.qwen_vl_interface.model, "model", self.qwen_vl_interface.model)
+        embedding_layer = embedding_owner.get_input_embeddings()
         hook_handle = embedding_layer.register_forward_hook(inject_query_hook)
         try:
             with torch.autocast("cuda", dtype=torch.bfloat16):
@@ -376,7 +419,9 @@ class Qwen_Adapter(baseframework):
         # Extract features (FULLY VECTORIZED)
         # ============================================================
         multi_layer_hidden_states = []
-        num_images, first_index_per_sample, last_index_per_sample = get_image_token_counts(qwen_inputs)
+        num_images, first_index_per_sample, last_index_per_sample = get_image_token_counts(
+            qwen_inputs, self.image_token_id
+        )
         
         max_patch_len = -999
         for b in range(batch_size):
@@ -471,7 +516,10 @@ if __name__ == "__main__":
 
     cfg = OmegaConf.load(args.config_yaml)
     # try get model
-    cfg.framework.qwenvl.base_vlm = "./playground/Pretrained_models/Qwen2.5-VL-3B-Instruct"
+    if cfg.framework.get("qwen35", None) is not None:
+        cfg.framework.qwen35.base_vlm = "Qwen/Qwen3.5-4B"
+    else:
+        cfg.framework.qwenvl.base_vlm = "./playground/Pretrained_models/Qwen2.5-VL-3B-Instruct"
     
     model: Qwen_Adapter = Qwen_Adapter(cfg)
     print(model)

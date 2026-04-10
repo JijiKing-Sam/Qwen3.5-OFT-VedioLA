@@ -8,6 +8,7 @@ import math
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from starVLA.model.modules.vlm.config_utils import get_active_vlm_config
 
 
 class VLA_Adapter_L1RegressionActionHead(nn.Module):
@@ -19,7 +20,8 @@ class VLA_Adapter_L1RegressionActionHead(nn.Module):
         super().__init__()
         self.config = full_config
 
-        input_dim = full_config.framework.qwenvl.vl_hidden_dim
+        namespace, _ = get_active_vlm_config(full_config)
+        input_dim = full_config.framework[namespace].vl_hidden_dim
         hidden_dim = full_config.framework.action_model.hidden_dim
         action_dim = full_config.framework.action_model.action_dim
         
