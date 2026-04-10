@@ -101,6 +101,27 @@ class ProprioProjector(nn.Module):
         projected_features = self.fc2(projected_features)
         return projected_features
 
+
+def normalize_proprio_state_tensor(
+    state,
+    *,
+    device: torch.device,
+    dtype: torch.dtype,
+) -> torch.Tensor:
+    """Collapse state history to the latest proprio frame expected by VLA-Adapter."""
+    state_tensor = torch.tensor(np.array(state), device=device, dtype=dtype)
+
+    if state_tensor.ndim == 1:
+        return state_tensor.unsqueeze(0)
+
+    if state_tensor.ndim == 2:
+        return state_tensor
+
+    # LeRobot LIBERO can surface a temporal proprio stack [B, T, D].
+    # VLA-Adapter consumes a single current proprio vector, so keep the latest frame.
+    state_tensor = state_tensor.reshape(state_tensor.shape[0], -1, state_tensor.shape[-1])
+    return state_tensor[:, -1, :]
+
 # Keep backward compatibility while enabling Qwen3.5 adapter training.
 @FRAMEWORK_REGISTRY.register("Qwen35Adapter")
 @FRAMEWORK_REGISTRY.register("QwenAdapter")
@@ -307,12 +328,14 @@ class Qwen_Adapter(baseframework):
 
         multi_layer_hidden_states = torch.cat(multi_layer_hidden_states, dim=1)  # [B, num_layers, L_total, H]
         state_projected = None
-        if state is not None: # repeat state 
-            state = torch.tensor(
-                    np.array(state), device=multi_layer_hidden_states.device, dtype=multi_layer_hidden_states.dtype
-                ) #  [B, 1, state_dim]
+        if state is not None:
+            state = normalize_proprio_state_tensor(
+                state,
+                device=multi_layer_hidden_states.device,
+                dtype=multi_layer_hidden_states.dtype,
+            )
             if self.proprio_projector is not None:
-                state_projected = self.proprio_projector(proprio=state.squeeze(1))  # [B, llm_dim]
+                state_projected = self.proprio_projector(proprio=state)  # [B, llm_dim]
 
         # Step 3: Action Expert Forward
         self.action_model = self.action_model.to(device=multi_layer_hidden_states.device, dtype=multi_layer_hidden_states.dtype)
@@ -486,12 +509,14 @@ class Qwen_Adapter(baseframework):
             
         multi_layer_hidden_states = torch.cat(multi_layer_hidden_states, dim=1)  # [B, num_layers, L_total, H]
         state_projected = None
-        if state is not None: # repeat state 
-            state = torch.tensor(
-                    np.array(state), device=multi_layer_hidden_states.device, dtype=multi_layer_hidden_states.dtype
-                ) #  [B, 1, state_dim]
+        if state is not None:
+            state = normalize_proprio_state_tensor(
+                state,
+                device=multi_layer_hidden_states.device,
+                dtype=multi_layer_hidden_states.dtype,
+            )
             if self.proprio_projector is not None:
-                state_projected = self.proprio_projector(proprio=state.squeeze(1))  # [B, llm_dim]
+                state_projected = self.proprio_projector(proprio=state)  # [B, llm_dim]
         
         # ============================================================
         # Action prediction
