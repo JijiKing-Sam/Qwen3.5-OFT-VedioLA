@@ -19,7 +19,9 @@ CONDA_EXE="${CONDA_EXE:-$(command -v conda || true)}"
 
 if [[ -n "${CONDA_EXE}" ]]; then
   eval "$("${CONDA_EXE}" shell.bash hook)"
-  if conda env list | awk '{print $1}' | grep -qx "${ENV_NAME}"; then
+  if [[ -d "${ENV_NAME}" ]]; then
+    conda activate "${ENV_NAME}"
+  elif conda env list | awk '{print $1}' | grep -qx "${ENV_NAME}"; then
     conda activate "${ENV_NAME}"
   fi
 fi

@@ -17,6 +17,19 @@ activate_python_env() {
   if [[ -n "${CONDA_EXE}" ]]; then
     eval "$("${CONDA_EXE}" shell.bash hook)"
 
+    if [[ -d "${ENV_NAME}" ]]; then
+      conda activate "${ENV_NAME}"
+      echo "Using conda env: ${ENV_NAME}"
+      return
+    fi
+
+    if [[ "${ENV_NAME}" == */* ]]; then
+      conda create -y -p "${ENV_NAME}" python="${PYTHON_VERSION}"
+      conda activate "${ENV_NAME}"
+      echo "Using conda env: ${ENV_NAME}"
+      return
+    fi
+
     if ! conda env list | awk '{print $1}' | grep -qx "${ENV_NAME}"; then
       conda create -y -n "${ENV_NAME}" python="${PYTHON_VERSION}"
     fi
