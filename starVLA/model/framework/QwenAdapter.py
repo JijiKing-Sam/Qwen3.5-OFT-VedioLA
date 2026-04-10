@@ -136,7 +136,8 @@ class Qwen_Adapter(baseframework):
         self.image_token_id = resolve_image_token_id(self.qwen_vl_interface)
         self.action_query_num = self.config.framework.action_model.get("action_query_num", 64)
         self.action_model: VLA_Adapter_L1RegressionActionHead = get_action_model(config=self.config)
-        self.action_query = nn.Parameter(torch.randn(self.action_query_num, self.qwen_vl_interface.model.config.hidden_size))
+        action_query_hidden = self.qwen_vl_interface.model.config.hidden_size
+        self.action_query = nn.Parameter(torch.zeros(self.action_query_num, action_query_hidden))
         self.dummy_action_token = "🔍" # TODO also can add spacail token to Qwen, but too complex
         self.dummy_action_token_id = self.qwen_vl_interface.processor.tokenizer("🔍", add_special_tokens=False)["input_ids"][0]
         self.dummy_action_prompt = self.dummy_action_token * self.action_query_num
@@ -150,7 +151,16 @@ class Qwen_Adapter(baseframework):
             )
         else:
             self.proprio_projector = None
-        nn.init.normal_(self.action_query, mean=0.0, std=0.02)
+
+        action_query_init = str(
+            self.config.framework.action_model.get("action_query_init", "zeros")
+        ).lower()
+        if action_query_init == "normal":
+            nn.init.normal_(self.action_query, mean=0.0, std=0.02)
+        elif action_query_init != "zeros":
+            raise ValueError(
+                f"Unsupported action_query_init={action_query_init!r}; expected 'zeros' or 'normal'."
+            )
 
     def forward(
         self,

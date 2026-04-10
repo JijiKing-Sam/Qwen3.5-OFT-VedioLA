@@ -11,6 +11,12 @@ import torch.nn.functional as F
 from starVLA.model.modules.vlm.config_utils import get_active_vlm_config
 
 
+def learnable_random_perturbations(seq_len, dim, device, dtype):
+    random_perturbations = nn.Parameter(torch.zeros(seq_len, dim, device=device, dtype=dtype))
+    nn.init.normal_(random_perturbations, mean=0.0, std=0.02)
+    return random_perturbations
+
+
 class VLA_Adapter_L1RegressionActionHead(nn.Module):
     """Simple MLP-based action head that generates continuous actions via L1 regression."""
     def __init__(
@@ -35,6 +41,9 @@ class VLA_Adapter_L1RegressionActionHead(nn.Module):
         self.num_actions_chunk = self.config.framework.action_model.get("num_actions_chunk", None)
         if self.num_actions_chunk is None:
             raise ValueError("num_actions_chunk must be specified in action_model config.")
+        self.use_chunk_query_perturbation = self.config.framework.action_model.get(
+            "use_chunk_query_perturbation", True
+        )
         
         # Learnable action chunk embeddings (like positional embeddings)
         # Applied during both training and inference
@@ -108,6 +117,16 @@ class VLA_Adapter_L1RegressionActionHead(nn.Module):
         # Add learnable action chunk embeddings (applied during both training and inference)
         embeddings = self.action_chunk_embeddings.unsqueeze(0).expand(batch_size, -1, -1)
         rearranged_actions_hidden_states = rearranged_actions_hidden_states + embeddings
+
+        if phase == "Training" and self.use_chunk_query_perturbation:
+            _, seq_len, dim = rearranged_actions_hidden_states.shape
+            random_perturbations = learnable_random_perturbations(
+                seq_len,
+                dim,
+                device=rearranged_actions_hidden_states.device,
+                dtype=rearranged_actions_hidden_states.dtype,
+            )
+            rearranged_actions_hidden_states = rearranged_actions_hidden_states + random_perturbations
 
         # 4. MLP Forward
         action = self.model(
